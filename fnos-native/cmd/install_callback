@@ -1,42 +1,14 @@
 #!/bin/bash
 
-export PATH=/var/apps/nodejs_v22/target/bin:$PATH
+log_msg() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${TRIM_PKGVAR}/install.log"
+}
 
-echo "Installing NewMail..."
+log_msg "Initializing NewMail..."
 
 # 创建数据目录
 mkdir -p "${TRIM_PKGVAR}/data"
 mkdir -p "${TRIM_PKGVAR}/logs"
-
-# 复制应用文件到target目录
-TARGET_DIR="${TRIM_APPDEST}/target"
-mkdir -p "$TARGET_DIR"
-
-# 复制server和client
-cp -r "${TRIM_APPDEST}/app/server" "$TARGET_DIR/"
-cp -r "${TRIM_APPDEST}/app/client" "$TARGET_DIR/"
-
-# 设置npm镜像源（国内加速）
-npm config set registry https://registry.npmmirror.com
-
-# 安装后端依赖
-cd "$TARGET_DIR/server"
-echo "Installing server dependencies..."
-npm ci --only=production --no-fund --no-optional 2>&1 || {
-  echo "npm ci failed, trying npm install..."
-  npm install --only=production --no-fund --no-optional 2>&1
-}
-
-# 安装前端依赖并构建
-cd "$TARGET_DIR/client"
-echo "Installing client dependencies..."
-npm ci --no-fund --no-optional 2>&1 || {
-  echo "npm ci failed, trying npm install..."
-  npm install --no-fund --no-optional 2>&1
-}
-
-echo "Building frontend..."
-npm run build 2>&1
 
 # 生成环境变量
 JWT_SECRET=$(openssl rand -hex 32)
@@ -51,4 +23,4 @@ LOG_PATH=${TRIM_PKGVAR}/logs
 NODE_ENV=production
 EOF
 
-echo "NewMail installed successfully"
+log_msg "NewMail installed successfully"
