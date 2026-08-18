@@ -1,0 +1,32 @@
+#!/bin/bash
+
+case "$1" in
+  start)
+    cd "${TRIM_APPDEST}/app/docker"
+    docker compose up -d
+    exit $?
+    ;;
+  stop)
+    cd "${TRIM_APPDEST}/app/docker"
+    docker compose down
+    exit $?
+    ;;
+  status)
+    docker inspect newmail 2>/dev/null | grep -q '"Status": "running",' 2>/dev/null
+    if [ $? -eq 0 ]; then
+      echo "NewMail is running"
+      exit 0
+    else
+      echo "NewMail is not running"
+      exit 3
+    fi
+    ;;
+  log)
+    LINES="${2:-100}"
+    docker logs --tail "$LINES" newmail 2>&1
+    exit 0
+    ;;
+  *)
+    exit 1
+    ;;
+esac

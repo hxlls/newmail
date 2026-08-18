@@ -1,0 +1,4 @@
+#!/bin/bash
+# config_init - 配置变更前
+echo "Applying configuration..."
+exit 0

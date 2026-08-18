@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  newmail:
+    image: ghcr.io/yourusername/newmail:1.0.0
+    container_name: newmail
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - "${TRIM_PKGVAR}:/app/data"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - DB_PATH=/app/data/newmail.db
+      - LOG_PATH=/app/data/logs

@@ -1,0 +1,4 @@
+#!/bin/bash
+# install_init - 安装前检查
+echo "Preparing to install NewMail..."
+exit 0

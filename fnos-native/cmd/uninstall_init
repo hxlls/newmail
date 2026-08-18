@@ -1,0 +1,17 @@
+#!/bin/bash
+# uninstall_init - 卸载前停止服务
+export PATH=/var/apps/nodejs_v22/target/bin:$PATH
+
+echo "Preparing to uninstall NewMail..."
+
+# 停止服务
+if [ -f "${TRIM_PKGVAR}/newmail.pid" ]; then
+  PID=$(cat "${TRIM_PKGVAR}/newmail.pid")
+  if kill -0 "$PID" 2>/dev/null; then
+    kill "$PID" 2>/dev/null
+    sleep 2
+  fi
+  rm -f "${TRIM_PKGVAR}/newmail.pid"
+fi
+
+exit 0

@@ -1,0 +1,28 @@
+{
+  "id": "com.newmail.newmail",
+  "name": "NewMail",
+  "version": "1.0.0",
+  "description": "AI邮件助手 - 支持多邮箱、大模型处理",
+  "author": "YourName",
+  "icon": "icon.png",
+  "arch": ["x86_64", "aarch64"],
+  "port": 3000,
+  "docker": {
+    "image": "ghcr.io/YOUR_USERNAME/newmail:latest",
+    "volumes": [
+      {
+        "container": "/app/data",
+        "host": "/vol1/app_data/newmail"
+      }
+    ],
+    "ports": [
+      {
+        "container": 3000,
+        "host": 3000
+      }
+    ]
+  },
+  "requirements": {
+    "min_os_version": "1.0"
+  }
+}

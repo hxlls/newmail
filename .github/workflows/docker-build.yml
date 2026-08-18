@@ -1,0 +1,272 @@
+name: Build Docker & fnos fpk
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: false
+        default: 'latest'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.event.inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-fpk:
+    needs: build-docker
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download fnpack
+        run: |
+          curl -sL "https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64" -o /usr/local/bin/fnpack
+          chmod +x /usr/local/bin/fnpack
+
+      - name: Create fpk project
+        run: |
+          fnpack create newmail --template docker
+          
+          # Update manifest
+          cat > newmail/manifest << EOF
+          appname               = newmail
+          version               = ${{ steps.version.outputs.version }}
+          display_name          = NewMail
+          desc                  = AI邮件助手 - 支持多邮箱统一管理、AI智能处理邮件、实时通知推送
+          platform              = all
+          source                = thirdparty
+          maintainer            = NewMail
+          maintainer_url        = https://github.com/${{ github.repository }}
+          distributor           = custom
+          distributor_url       = https://github.com/${{ github.repository }}
+          desktop_uidir         = ui
+          desktop_applaunchname = newmail.Application
+          service_port          = 3000
+          ctl_stop              = true
+          EOF
+
+      - name: Configure Docker Compose
+        run: |
+          cat > newmail/app/docker/docker-compose.yaml << EOF
+          version: "3.8"
+          
+          services:
+            newmail:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+              container_name: newmail
+              restart: unless-stopped
+              ports:
+                - "3000:3000"
+              volumes:
+                - "\${TRIM_PKGVAR}:/app/data"
+              environment:
+                - NODE_ENV=production
+                - PORT=3000
+                - JWT_SECRET=\${JWT_SECRET}
+                - ENCRYPTION_KEY=\${ENCRYPTION_KEY}
+                - DB_PATH=/app/data/newmail.db
+                - LOG_PATH=/app/data/logs
+          EOF
+
+      - name: Configure UI
+        run: |
+          cat > newmail/app/ui/config << EOF
+          {
+            ".url": {
+              "newmail.Application": {
+                "title": "NewMail",
+                "desc": "AI邮件助手",
+                "icon": "images/icon_{0}.png",
+                "type": "url",
+                "port": "3000",
+                "protocol": "http",
+                "url": "/",
+                "allUsers": true
+              }
+            }
+          }
+          EOF
+
+      - name: Configure lifecycle scripts
+        run: |
+          # main script
+          cat > newmail/cmd/main << 'SCRIPT'
+          #!/bin/bash
+          
+          case "$1" in
+            start)
+              cd "${TRIM_APPDEST}/app/docker"
+              docker compose up -d
+              exit $?
+              ;;
+            stop)
+              cd "${TRIM_APPDEST}/app/docker"
+              docker compose down
+              exit $?
+              ;;
+            status)
+              docker inspect newmail 2>/dev/null | grep -q '"Status": "running",' 2>/dev/null
+              if [ $? -eq 0 ]; then
+                echo "NewMail is running"
+                exit 0
+              else
+                echo "NewMail is not running"
+                exit 3
+              fi
+              ;;
+            log)
+              LINES="${2:-100}"
+              docker logs --tail "$LINES" newmail 2>&1
+              exit 0
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+          SCRIPT
+          
+          # install_callback script
+          cat > newmail/cmd/install_callback << 'SCRIPT'
+          #!/bin/bash
+          
+          JWT_SECRET=$(openssl rand -hex 32)
+          ENCRYPTION_KEY=$(openssl rand -hex 16)
+          
+          cat > "${TRIM_PKGVAR}/.env" << ENVEOF
+          PORT=3000
+          JWT_SECRET=${JWT_SECRET}
+          ENCRYPTION_KEY=${ENCRYPTION_KEY}
+          DB_PATH=/app/data/newmail.db
+          LOG_PATH=/app/data/logs
+          ENVEOF
+          
+          mkdir -p "${TRIM_PKGVAR}/data"
+          mkdir -p "${TRIM_PKGVAR}/logs"
+          
+          echo "NewMail installed successfully"
+          SCRIPT
+          
+          chmod +x newmail/cmd/*
+
+      - name: Configure resources
+        run: |
+          cat > newmail/config/resource << EOF
+          {
+            "port-config": {
+              "protocol-file": "newmail.sc"
+            },
+            "data-share": {
+              "shares": [
+                {
+                  "name": "newmail",
+                  "permission": {
+                    "rw": ["newmail"]
+                  }
+                }
+              ]
+            },
+            "systemd-unit": {}
+          }
+          EOF
+          
+          cat > newmail/config/privilege << EOF
+          {
+            "defaults": {
+              "run-as": "package"
+            },
+            "username": "newmail",
+            "groupname": "newmail"
+          }
+          EOF
+          
+          cat > newmail/newmail.sc << EOF
+          [newmail]
+          title="NewMail"
+          desc="AI邮件助手"
+          port_forward="yes"
+          src.ports="3000/tcp"
+          dst.ports="3000/tcp"
+          EOF
+
+      - name: Copy icons
+        run: |
+          if [ -f "fnos/icon.png" ]; then
+            cp fnos/icon.png newmail/ICON.PNG
+            cp fnos/icon_256.png newmail/ICON_256.PNG 2>/dev/null || cp fnos/icon.png newmail/ICON_256.PNG
+            cp fnos/icon.png newmail/app/ui/images/icon_64.png
+            cp fnos/icon_256.png newmail/app/ui/images/icon_256.png 2>/dev/null || cp fnos/icon.png newmail/app/ui/images/icon_256.png
+          fi
+
+      - name: Build fpk
+        run: |
+          cd newmail
+          fnpack build
+          mv newmail.fpk ../newmail_${{ steps.version.outputs.version }}.fpk
+
+      - name: Upload fpk artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: newmail-fpk
+          path: newmail_*.fpk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: newmail_*.fpk
+          generate_release_notes: true

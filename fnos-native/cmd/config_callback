@@ -1,0 +1,23 @@
+#!/bin/bash
+# config_callback - 配置变更后重启服务
+export PATH=/var/apps/nodejs_v22/target/bin:$PATH
+
+echo "Configuration changed, restarting NewMail..."
+
+# 停止当前服务
+if [ -f "${TRIM_PKGVAR}/newmail.pid" ]; then
+  PID=$(cat "${TRIM_PKGVAR}/newmail.pid")
+  if kill -0 "$PID" 2>/dev/null; then
+    kill "$PID" 2>/dev/null
+    sleep 2
+  fi
+  rm -f "${TRIM_PKGVAR}/newmail.pid"
+fi
+
+# 重新启动
+cd "${TRIM_APPDEST}/target"
+NODE_ENV=production node server/src/index.js >> "${TRIM_PKGVAR}/newmail.log" 2>&1 &
+echo $! > "${TRIM_PKGVAR}/newmail.pid"
+
+echo "NewMail restarted"
+exit 0

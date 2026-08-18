@@ -1,0 +1,15 @@
+#!/bin/bash
+# uninstall_callback - 卸载清理
+echo "Uninstalling NewMail..."
+
+# 如果用户选择删除数据
+if [ "$wizard_delete_data" = "true" ]; then
+  echo "Removing data..."
+  rm -rf "${TRIM_PKGVAR}/data"
+  rm -rf "${TRIM_PKGVAR}/logs"
+  rm -f "${TRIM_PKGVAR}/.env"
+  rm -f "${TRIM_PKGVAR}/newmail.log"
+fi
+
+echo "NewMail uninstalled"
+exit 0

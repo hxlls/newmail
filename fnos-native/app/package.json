@@ -1,0 +1,10 @@
+{
+  "name": "newmail",
+  "version": "1.0.0",
+  "description": "AI邮件助手",
+  "private": true,
+  "scripts": {
+    "start": "node server/src/index.js",
+    "build": "cd client && npm run build"
+  }
+}

@@ -1,0 +1,79 @@
+#!/bin/bash
+
+export PATH=/var/apps/nodejs_v22/target/bin:$PATH
+
+case "$1" in
+  start)
+    cd "${TRIM_APPDEST}/target"
+    
+    # 检查依赖是否安装
+    if [ ! -d "node_modules" ]; then
+      echo "Installing dependencies..."
+      npm ci --only=production
+    fi
+    
+    # 检查前端是否构建
+    if [ ! -d "client/dist" ]; then
+      echo "Building frontend..."
+      cd client
+      npm ci
+      npm run build
+      cd ..
+    fi
+    
+    # 启动应用
+    echo "Starting NewMail..."
+    NODE_ENV=production node server/src/index.js >> "${TRIM_PKGVAR}/newmail.log" 2>&1 &
+    echo $! > "${TRIM_PKGVAR}/newmail.pid"
+    
+    # 等待启动
+    sleep 2
+    if kill -0 $(cat "${TRIM_PKGVAR}/newmail.pid") 2>/dev/null; then
+      echo "NewMail started successfully"
+      exit 0
+    else
+      echo "NewMail failed to start"
+      exit 1
+    fi
+    ;;
+    
+  stop)
+    if [ -f "${TRIM_PKGVAR}/newmail.pid" ]; then
+      PID=$(cat "${TRIM_PKGVAR}/newmail.pid")
+      if kill -0 "$PID" 2>/dev/null; then
+        echo "Stopping NewMail..."
+        kill "$PID"
+        sleep 2
+        kill -9 "$PID" 2>/dev/null || true
+      fi
+      rm -f "${TRIM_PKGVAR}/newmail.pid"
+    fi
+    exit 0
+    ;;
+    
+  status)
+    if [ -f "${TRIM_PKGVAR}/newmail.pid" ]; then
+      PID=$(cat "${TRIM_PKGVAR}/newmail.pid")
+      if kill -0 "$PID" 2>/dev/null; then
+        echo "NewMail is running"
+        exit 0
+      fi
+    fi
+    echo "NewMail is not running"
+    exit 3
+    ;;
+    
+  log)
+    LINES="${2:-100}"
+    if [ -f "${TRIM_PKGVAR}/newmail.log" ]; then
+      tail -n "$LINES" "${TRIM_PKGVAR}/newmail.log"
+    else
+      echo "No log file found"
+    fi
+    exit 0
+    ;;
+    
+  *)
+    exit 1
+    ;;
+esac

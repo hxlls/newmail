@@ -1,0 +1,22 @@
+#!/bin/bash
+# upgrade_callback - 升级后更新依赖
+export PATH=/var/apps/nodejs_v22/target/bin:$PATH
+
+echo "Upgrading NewMail..."
+
+TARGET_DIR="${TRIM_APPDEST}/target"
+
+# 更新server
+cp -r "${TRIM_APPDEST}/app/server" "$TARGET_DIR/"
+cp -r "${TRIM_APPDEST}/app/client" "$TARGET_DIR/"
+
+# 更新依赖
+cd "$TARGET_DIR/server"
+npm ci --only=production
+
+cd "$TARGET_DIR/client"
+npm ci
+npm run build
+
+echo "NewMail upgraded successfully"
+exit 0

@@ -1,0 +1,14 @@
+appname               = newmail
+version               = 1.0.0
+display_name          = NewMail
+desc                  = AI邮件助手 - 支持多邮箱统一管理、AI智能处理邮件、实时通知推送
+platform              = all
+source                = thirdparty
+maintainer            = NewMail
+maintainer_url        = https://github.com/yourusername/newmail
+distributor           = custom
+distributor_url       = https://github.com/yourusername/newmail
+desktop_uidir         = ui
+desktop_applaunchname = newmail.Application
+service_port          = 3000
+ctl_stop              = true
