@@ -1,4 +1,11 @@
-require('dotenv').config();
+// 加载环境变量（优先使用系统环境变量）
+if (!process.env.DB_PATH) {
+  try {
+    require('dotenv').config();
+  } catch (e) {
+    // dotenv not available, use system env
+  }
+}
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');

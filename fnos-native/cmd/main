@@ -6,33 +6,34 @@ case "$1" in
   start)
     cd "${TRIM_APPDEST}/target"
     
-    # 检查依赖是否安装
-    if [ ! -d "node_modules" ]; then
-      echo "Installing dependencies..."
-      npm ci --only=production
+    # 加载环境变量
+    if [ -f "${TRIM_PKGVAR}/.env" ]; then
+      export $(grep -v '^#' "${TRIM_PKGVAR}/.env" | xargs)
     fi
     
-    # 检查前端是否构建
-    if [ ! -d "client/dist" ]; then
-      echo "Building frontend..."
-      cd client
-      npm ci
-      npm run build
-      cd ..
-    fi
+    # 设置默认值
+    export PORT=${PORT:-3000}
+    export NODE_ENV=production
+    export DB_PATH=${DB_PATH:-${TRIM_PKGVAR}/data/newmail.db}
+    export LOG_PATH=${LOG_PATH:-${TRIM_PKGVAR}/logs}
+    export CLIENT_URL=http://localhost:${PORT}
+    
+    # 创建必要目录
+    mkdir -p "${TRIM_PKGVAR}/data"
+    mkdir -p "${TRIM_PKGVAR}/logs"
     
     # 启动应用
-    echo "Starting NewMail..."
-    NODE_ENV=production node server/src/index.js >> "${TRIM_PKGVAR}/newmail.log" 2>&1 &
+    echo "Starting NewMail on port ${PORT}..."
+    node server/src/index.js >> "${TRIM_PKGVAR}/newmail.log" 2>&1 &
     echo $! > "${TRIM_PKGVAR}/newmail.pid"
     
     # 等待启动
-    sleep 2
+    sleep 3
     if kill -0 $(cat "${TRIM_PKGVAR}/newmail.pid") 2>/dev/null; then
       echo "NewMail started successfully"
       exit 0
     else
-      echo "NewMail failed to start"
+      echo "NewMail failed to start, check ${TRIM_PKGVAR}/newmail.log"
       exit 1
     fi
     ;;
