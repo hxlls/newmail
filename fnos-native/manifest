@@ -1,5 +1,5 @@
 appname               = newmail
-version               = 1.0.0
+version               = 1.0.1
 display_name          = NewMail
 desc                  = AI邮件助手 - 支持多邮箱统一管理、AI智能处理邮件、实时通知推送
 platform              = all
