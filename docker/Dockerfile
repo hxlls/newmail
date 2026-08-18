@@ -14,10 +14,10 @@ COPY server/package*.json ./server/
 COPY client/package*.json ./client/
 
 WORKDIR /app/server
-RUN npm ci --only=production
+RUN npm install --only=production --no-fund
 
 WORKDIR /app/client
-RUN npm ci
+RUN npm install --no-fund
 
 FROM deps AS build
 
