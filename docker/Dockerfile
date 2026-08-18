@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM node:20-slim AS base
+FROM node:20-slim AS base
 
 WORKDIR /app
 
@@ -14,10 +14,10 @@ COPY server/package*.json ./server/
 COPY client/package*.json ./client/
 
 WORKDIR /app/server
-RUN npm install --only=production --no-fund
+RUN npm install --production --no-fund --no-optional || npm install --production --no-fund
 
 WORKDIR /app/client
-RUN npm install --no-fund
+RUN npm install --no-fund --no-optional || npm install --no-fund
 
 FROM deps AS build
 
