@@ -1,12 +1,24 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { getDb } = require('../db/init');
 const { logger } = require('../utils/logger');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+
+// 登录接口专用限流（更严格）
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分钟
+  max: 10, // 最多10次尝试
+  message: { error: '登录尝试次数过多，请15分钟后再试' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// 邮箱格式验证
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 router.post('/register', async (req, res) => {
   try {
@@ -16,8 +28,25 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: '请填写所有必填字段' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: '密码至少6位' });
+    // 验证用户名
+    if (username.length < 3 || username.length > 30) {
+      return res.status(400).json({ error: '用户名长度应为3-30个字符' });
+    }
+    if (!/^[a-zA-Z0-9_\u4e00-\u9fa5]+$/.test(username)) {
+      return res.status(400).json({ error: '用户名只能包含字母、数字、下划线和中文' });
+    }
+
+    // 验证邮箱
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: '邮箱格式不正确' });
+    }
+
+    // 验证密码强度
+    if (password.length < 8) {
+      return res.status(400).json({ error: '密码至少8位' });
+    }
+    if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      return res.status(400).json({ error: '密码需包含大小写字母和数字' });
     }
 
     const db = getDb();
@@ -27,7 +56,7 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ error: '用户名或邮箱已存在' });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);  // 增加salt轮数
     const result = db.prepare('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)').run(username, email, passwordHash);
 
     const token = jwt.sign({ userId: result.lastInsertRowid, username }, JWT_SECRET, { expiresIn: '7d' });
@@ -40,7 +69,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
 

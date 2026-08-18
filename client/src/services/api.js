@@ -52,11 +52,15 @@ export const mailboxAPI = {
 export const emailAPI = {
   getAll: (params) => api.get('/emails', { params }),
   sync: (data) => api.post('/emails/sync', data),
+  getFolders: (mailboxId) => api.get('/emails/folders', { params: { mailbox_id: mailboxId } }),
   getById: (id) => api.get(`/emails/${id}`),
-  send: (data) => api.post('/emails/send', data),
+  send: (data) => api.post('/emails/send', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
   markRead: (id, read) => api.put(`/emails/${id}/read`, { read }),
   markStarred: (id, starred) => api.put(`/emails/${id}/star`, { starred }),
-  delete: (id) => api.delete(`/emails/${id}`)
+  delete: (id) => api.delete(`/emails/${id}`),
+  moveToFolder: (id, folder) => api.put(`/emails/${id}/move`, { folder }),
+  getAttachments: (id) => api.get(`/emails/${id}/attachments`),
+  downloadAttachment: (emailId, attachmentId) => api.get(`/emails/${emailId}/attachments/${attachmentId}`, { responseType: 'blob' })
 };
 
 export const aiAPI = {
@@ -64,9 +68,21 @@ export const aiAPI = {
   createConfig: (data) => api.post('/ai/configs', data),
   updateConfig: (id, data) => api.put(`/ai/configs/${id}`, data),
   deleteConfig: (id) => api.delete(`/ai/configs/${id}`),
+  testConfig: (data) => api.post('/ai/test', data),
   chat: (data) => api.post('/ai/chat', data),
   summarize: (data) => api.post('/ai/summarize', data),
   generateReply: (data) => api.post('/ai/reply', data)
+};
+
+export const backupAPI = {
+  export: (folders) => api.get('/backup/export', { 
+    params: { folders },
+    responseType: 'blob' 
+  }),
+  import: (formData) => api.post('/backup/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getStats: () => api.get('/backup/stats')
 };
 
 export default api;

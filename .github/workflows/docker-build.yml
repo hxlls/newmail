@@ -16,6 +16,35 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  build-arm64-native:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build ARM64 native module
+        run: |
+          docker run --rm \
+            --platform linux/arm64 \
+            -v ${{ github.workspace }}/server:/app \
+            -w /app \
+            node:20-slim \
+            bash -c "
+              apt-get update > /dev/null 2>&1 && 
+              apt-get install -y python3 make g++ > /dev/null 2>&1 &&
+              npm install better-sqlite3 --build-from-source > /dev/null 2>&1 &&
+              echo 'ARM64 build complete'
+            "
+
+      - name: Upload ARM64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-binary
+          path: server/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+
   build-docker:
     runs-on: ubuntu-latest
     permissions:
@@ -55,7 +84,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -63,7 +92,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-fpk:
-    needs: build-docker
+    needs: build-arm64-native
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -74,6 +103,12 @@ jobs:
       - name: Get version
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download ARM64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: arm64-binary
+          path: server/node_modules/better-sqlite3/build/Release/
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -88,9 +123,9 @@ jobs:
       - name: Install dependencies
         run: |
           cd server
-          npm ci --only=production
+          npm install --production --ignore-scripts
           cd ../client
-          npm ci
+          npm install
 
       - name: Build frontend
         run: |
@@ -100,17 +135,20 @@ jobs:
       - name: Prepare fpk package
         run: |
           # 创建构建目录
-          mkdir -p fpk-build/app/server fpk-build/app/client
+          mkdir -p fpk-build/app/server fpk-build/app/ui/images
           
           # 复制项目文件
           cp -r fnos-native/* fpk-build/
           
-          # 复制已构建的文件
+          # 复制server（包含预编译的ARM64模块）
           cp -r server/* fpk-build/app/server/
-          cp -r server/node_modules fpk-build/app/server/
-          cp -r client/* fpk-build/app/client/
-          cp -r client/dist fpk-build/app/client/
-          cp -r client/node_modules fpk-build/app/client/
+          
+          # 复制前端构建产物
+          mkdir -p fpk-build/app/server/public
+          cp -r client/dist/* fpk-build/app/server/public/
+          
+          # 复制UI配置
+          cp fnos-native/app/ui/config fpk-build/app/ui/
           
           # 复制图标
           cp fnos/icon.png fpk-build/ICON.PNG
@@ -120,24 +158,6 @@ jobs:
           
           # 更新版本号
           sed -i "s/^version.*/version               = ${{ steps.version.outputs.version }}/" fpk-build/manifest
-          
-          # 简化install脚本
-          cat > fpk-build/cmd/install_callback << 'EOF'
-          #!/bin/bash
-          mkdir -p "${TRIM_PKGVAR}/data" "${TRIM_PKGVAR}/logs"
-          JWT_SECRET=$(openssl rand -hex 32)
-          ENCRYPTION_KEY=$(openssl rand -hex 16)
-          cat > "${TRIM_PKGVAR}/.env" << ENVEOF
-          PORT=3000
-          JWT_SECRET=${JWT_SECRET}
-          ENCRYPTION_KEY=${ENCRYPTION_KEY}
-          DB_PATH=${TRIM_PKGVAR}/data/newmail.db
-          LOG_PATH=${TRIM_PKGVAR}/logs
-          NODE_ENV=production
-          ENVEOF
-          echo "NewMail installed successfully"
-          EOF
-          chmod +x fpk-build/cmd/*
 
       - name: Build fpk
         run: |

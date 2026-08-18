@@ -9,23 +9,120 @@ const router = express.Router();
 router.use(authMiddleware);
 
 const AI_PROVIDERS = {
+  deepseek: {
+    baseUrl: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner', 'deepseek-v3'],
+    name: 'DeepSeek'
+  },
+  mimo: {
+    baseUrl: 'https://api.mimo.com/v1',
+    models: ['mimo-v2.5-pro', 'mimo-v2.5-flash', 'mimo-v2-pro'],
+    name: '小米 MIMO'
+  },
+  k3: {
+    baseUrl: 'https://api.k3.ai/v1',
+    models: ['k3-chat', 'k3-turbo', 'k3-v2'],
+    name: 'K3 AI'
+  },
+  qwen: {
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    models: ['qwen-turbo-latest', 'qwen-plus-latest', 'qwen-max-latest', 'qwen2.5-72b-instruct', 'qwen-vl-max'],
+    name: '通义千问'
+  },
+  zhipu: {
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    models: ['glm-4-plus', 'glm-4-flash', 'glm-4v-plus', 'glm-4-long'],
+    name: '智谱GLM'
+  },
+  baidu: {
+    baseUrl: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop',
+    models: ['ernie-4.0-turbo-8k', 'ernie-3.5-128k', 'ernie-speed-128k', 'ernie-lite-8k'],
+    name: '百度文心'
+  },
+  moonshot: {
+    baseUrl: 'https://api.moonshot.cn/v1',
+    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+    name: '月之暗面'
+  },
+  minimax: {
+    baseUrl: 'https://api.minimax.chat/v1',
+    models: ['abab6.5s-chat', 'abab6.5-chat', 'abab6.5g-chat'],
+    name: 'MiniMax'
+  },
+  spark: {
+    baseUrl: 'https://spark-api-open.xf-yun.com/v1',
+    models: ['4.0Ultra', 'max-32k', 'pro-128k', 'lite'],
+    name: '讯飞星火'
+  },
+  doubao: {
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    models: ['doubao-1.5-pro-256k', 'doubao-1.5-pro-32k', 'doubao-1.5-lite-32k', 'doubao-vision-pro-32k'],
+    name: '字节豆包'
+  },
+  stepfun: {
+    baseUrl: 'https://api.stepfun.com/v1',
+    models: ['step-2-16k', 'step-2-16k-exp', 'step-1v-8k', 'step-1-flash-8k'],
+    name: '阶跃星辰'
+  },
+  baichuan: {
+    baseUrl: 'https://api.baichuan-ai.com/v1',
+    models: ['Baichuan4', 'Baichuan3-Turbo', 'Baichuan2-Turbo'],
+    name: '百川智能'
+  },
+  yi: {
+    baseUrl: 'https://api.lingyiwanwu.com/v1',
+    models: ['yi-large', 'yi-medium', 'yi-spark', 'yi-vision'],
+    name: '零一万物'
+  },
   openai: {
     baseUrl: 'https://api.openai.com/v1',
-    models: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo']
+    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
+    name: 'OpenAI'
   },
   claude: {
     baseUrl: 'https://api.anthropic.com/v1',
-    models: ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307']
+    models: ['claude-sonnet-4-20250514', 'claude-3.5-sonnet-20241022', 'claude-3.5-haiku-20241022'],
+    name: 'Claude'
+  },
+  gemini: {
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    name: 'Google Gemini'
   },
   custom: {
     baseUrl: '',
-    models: []
+    models: [],
+    name: '自定义'
   }
 };
 
 router.get('/configs', (req, res) => {
   try {
     const db = getDb();
+    
+    // 检查表是否存在
+    const tableExists = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_configs'"
+    ).get();
+    
+    if (!tableExists) {
+      // 如果表不存在，创建它
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_configs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          provider TEXT NOT NULL,
+          api_key_encrypted TEXT NOT NULL,
+          model TEXT,
+          base_url TEXT,
+          is_active INTEGER DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+      return res.json({ configs: [] });
+    }
+    
     const configs = db.prepare(
       'SELECT id, provider, model, base_url, is_active, created_at FROM ai_configs WHERE user_id = ?'
     ).all(req.user.userId);
@@ -108,15 +205,92 @@ router.delete('/configs/:id', (req, res) => {
   }
 });
 
+// 测试AI配置
+router.post('/test', async (req, res) => {
+  try {
+    const { provider, api_key, model, base_url } = req.body;
+
+    if (!provider || !api_key) {
+      return res.status(400).json({ error: '请填写提供商和API密钥' });
+    }
+
+    const providerConfig = AI_PROVIDERS[provider] || AI_PROVIDERS.custom;
+    const baseUrl = base_url || providerConfig.baseUrl;
+    const testModel = model || providerConfig.models[0] || 'gpt-3.5-turbo';
+
+    if (!baseUrl) {
+      return res.status(400).json({ error: '请填写API地址' });
+    }
+
+    let response;
+
+    if (provider === 'claude') {
+      response = await axios.post(`${baseUrl}/messages`, {
+        model: testModel,
+        max_tokens: 50,
+        messages: [{ role: 'user', content: '你好，请回复"测试成功"' }]
+      }, {
+        headers: {
+          'x-api-key': api_key,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        timeout: 30000
+      });
+
+      res.json({ 
+        success: true, 
+        message: 'API测试成功',
+        model: testModel,
+        response: response.data.content[0].text
+      });
+    } else {
+      response = await axios.post(`${baseUrl}/chat/completions`, {
+        model: testModel,
+        messages: [{ role: 'user', content: '你好，请回复"测试成功"' }],
+        max_tokens: 50
+      }, {
+        headers: {
+          'Authorization': `Bearer ${api_key}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      });
+
+      res.json({ 
+        success: true, 
+        message: 'API测试成功',
+        model: testModel,
+        response: response.data.choices[0].message.content
+      });
+    }
+  } catch (error) {
+    logger.error('API测试失败:', error.response?.data || error.message);
+    const errorMsg = error.response?.data?.error?.message 
+      || error.response?.data?.message 
+      || error.message;
+    res.status(500).json({ 
+      success: false, 
+      error: `API测试失败: ${errorMsg}` 
+    });
+  }
+});
+
 router.post('/chat', async (req, res) => {
   try {
     const { config_id, messages, email_content } = req.body;
     const db = getDb();
 
-    const aiConfig = db.prepare('SELECT * FROM ai_configs WHERE id = ? AND user_id = ? AND is_active = 1').get(config_id, req.user.userId);
+    // 如果没有指定config_id，使用用户的第一个活跃配置
+    let aiConfig;
+    if (config_id) {
+      aiConfig = db.prepare('SELECT * FROM ai_configs WHERE id = ? AND user_id = ? AND is_active = 1').get(config_id, req.user.userId);
+    } else {
+      aiConfig = db.prepare('SELECT * FROM ai_configs WHERE user_id = ? AND is_active = 1 ORDER BY id LIMIT 1').get(req.user.userId);
+    }
 
     if (!aiConfig) {
-      return res.status(404).json({ error: '未找到有效的AI配置' });
+      return res.status(400).json({ error: '请先在设置中配置AI服务' });
     }
 
     const apiKey = decrypt(aiConfig.api_key_encrypted);
@@ -176,13 +350,18 @@ router.post('/summarize', async (req, res) => {
       return res.status(400).json({ error: '请提供邮件内容' });
     }
 
-    req.body.messages = [{ role: 'user', content: `请用中文简洁地总结这封邮件的主要内容，不超过100字：\n\n${email_content}` }];
-
     const db = getDb();
-    const aiConfig = db.prepare('SELECT * FROM ai_configs WHERE id = ? AND user_id = ? AND is_active = 1').get(config_id, req.user.userId);
+    
+    // 如果没有指定config_id，使用用户的第一个活跃配置
+    let aiConfig;
+    if (config_id) {
+      aiConfig = db.prepare('SELECT * FROM ai_configs WHERE id = ? AND user_id = ? AND is_active = 1').get(config_id, req.user.userId);
+    } else {
+      aiConfig = db.prepare('SELECT * FROM ai_configs WHERE user_id = ? AND is_active = 1 ORDER BY id LIMIT 1').get(req.user.userId);
+    }
 
     if (!aiConfig) {
-      return res.status(404).json({ error: '未找到有效的AI配置' });
+      return res.status(400).json({ error: '请先在设置中配置AI服务' });
     }
 
     const apiKey = decrypt(aiConfig.api_key_encrypted);
@@ -233,10 +412,16 @@ router.post('/reply', async (req, res) => {
     const { config_id, email_content, tone, language } = req.body;
     const db = getDb();
 
-    const aiConfig = db.prepare('SELECT * FROM ai_configs WHERE id = ? AND user_id = ? AND is_active = 1').get(config_id, req.user.userId);
+    // 如果没有指定config_id，使用用户的第一个活跃配置
+    let aiConfig;
+    if (config_id) {
+      aiConfig = db.prepare('SELECT * FROM ai_configs WHERE id = ? AND user_id = ? AND is_active = 1').get(config_id, req.user.userId);
+    } else {
+      aiConfig = db.prepare('SELECT * FROM ai_configs WHERE user_id = ? AND is_active = 1 ORDER BY id LIMIT 1').get(req.user.userId);
+    }
 
     if (!aiConfig) {
-      return res.status(404).json({ error: '未找到有效的AI配置' });
+      return res.status(400).json({ error: '请先在设置中配置AI服务' });
     }
 
     const apiKey = decrypt(aiConfig.api_key_encrypted);

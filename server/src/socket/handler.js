@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { logger } = require('../utils/logger');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const { JWT_SECRET } = require('../middleware/auth');
 
 function setupSocketHandlers(io) {
   io.use((socket, next) => {
@@ -12,7 +11,10 @@ function setupSocketHandlers(io) {
 
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      socket.user = decoded;
+      socket.user = {
+        userId: decoded.userId || decoded.id,
+        username: decoded.username
+      };
       next();
     } catch (error) {
       next(new Error('认证失败'));

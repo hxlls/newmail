@@ -1,5 +1,5 @@
 const { getDb } = require('../db/init');
-const { fetchEmails } = require('./mailService');
+const { fetchEmails, fetchEmailsPop3 } = require('./mailService');
 const { decrypt } = require('../utils/crypto');
 const { logger } = require('../utils/logger');
 
@@ -34,15 +34,22 @@ async function checkAllMailboxes(io) {
 }
 
 async function checkMailbox(mailbox, io) {
+  const protocol = mailbox.protocol || 'imap';
+  
   const config = {
-    host: mailbox.imap_host,
-    port: mailbox.imap_port,
-    secure: mailbox.imap_secure === 1,
+    host: protocol === 'imap' ? mailbox.imap_host : mailbox.pop3_host,
+    port: protocol === 'imap' ? mailbox.imap_port : mailbox.pop3_port,
+    secure: protocol === 'imap' ? (mailbox.imap_secure === 1) : (mailbox.pop3_secure === 1),
     user: mailbox.email,
     password: decrypt(mailbox.password_encrypted)
   };
 
-  const emails = await fetchEmails(config, 'INBOX', 20);
+  let emails;
+  if (protocol === 'pop3') {
+    emails = await fetchEmailsPop3(config, 20);
+  } else {
+    emails = await fetchEmails(config, 'INBOX', 20);
+  }
 
   const db = getDb();
   let newCount = 0;

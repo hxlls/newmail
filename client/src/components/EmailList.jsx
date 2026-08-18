@@ -11,7 +11,7 @@ dayjs.extend(relativeTime);
 
 function EmailList() {
   const { t, i18n } = useTranslation();
-  const { id: mailboxId } = useParams();
+  const { id: mailboxId, folder } = useParams();
   const navigate = useNavigate();
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -25,16 +25,24 @@ function EmailList() {
 
   useEffect(() => {
     loadEmails();
-  }, [mailboxId, page]);
+  }, [mailboxId, folder, page]);
 
   const loadEmails = async () => {
     setLoading(true);
     try {
-      const res = await emailAPI.getAll({
-        mailbox_id: mailboxId,
+      const params = {
         page,
         limit: 50
-      });
+      };
+      
+      if (mailboxId) {
+        params.mailbox_id = mailboxId;
+      }
+      if (folder) {
+        params.folder = folder;
+      }
+      
+      const res = await emailAPI.getAll(params);
       setEmails(res.data.emails);
       setTotal(res.data.total);
     } catch (error) {

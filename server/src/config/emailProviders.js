@@ -8,13 +8,20 @@ const EMAIL_PROVIDERS = {
       port: 993,
       secure: true
     },
+    pop3: {
+      host: 'pop.gmail.com',
+      port: 995,
+      secure: true
+    },
     smtp: {
       host: 'smtp.gmail.com',
       port: 465,
       secure: true
     },
-    note: '需要开启两步验证并生成应用专用密码',
-    helpUrl: 'https://support.google.com/accounts/answer/185833'
+    protocol: 'imap', // 默认协议
+    note: '需要开启两步验证并生成应用专用密码。如需使用IMAP，请在Gmail设置中启用IMAP访问。',
+    helpUrl: 'https://support.google.com/accounts/answer/185833',
+    helpNote: 'Gmail设置 > 转发和POP/IMAP > 启用IMAP'
   },
   outlook: {
     name: 'Outlook / Hotmail',
@@ -30,6 +37,7 @@ const EMAIL_PROVIDERS = {
       port: 587,
       secure: false
     },
+    protocol: 'imap',
     note: '支持 @outlook.com, @hotmail.com, @live.com',
     helpUrl: null
   },
@@ -228,7 +236,11 @@ function getAllProviders() {
     name: provider.name,
     domain: provider.domain,
     icon: provider.icon,
-    note: provider.note
+    note: provider.note,
+    protocol: provider.protocol || 'imap',
+    imap: provider.imap,
+    pop3: provider.pop3,
+    smtp: provider.smtp
   }));
 }
 

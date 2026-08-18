@@ -1,0 +1,34 @@
+name: Build ARM64 Native Module
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build ARM64 native module
+        run: |
+          docker run --rm \
+            --platform linux/arm64 \
+            -v ${{ github.workspace }}/server:/app \
+            -w /app \
+            node:20-slim \
+            bash -c "
+              apt-get update && 
+              apt-get install -y python3 make g++ &&
+              npm install better-sqlite3 --build-from-source
+            "
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: better-sqlite3-arm64
+          path: server/node_modules/better-sqlite3/build/Release/better_sqlite3.node

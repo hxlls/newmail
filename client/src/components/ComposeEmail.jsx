@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Form, Input, Button, Select, Card, message, Space } from 'antd';
-import { SendOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Select, Card, message, Space, Tooltip, Upload } from 'antd';
+import { SendOutlined, ArrowLeftOutlined, RobotOutlined, PaperClipOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { emailAPI, aiAPI } from '../services/api';
 
@@ -14,6 +14,7 @@ function ComposeEmail({ mailboxes }) {
   const [form] = Form.useForm();
   const [sending, setSending] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [fileList, setFileList] = useState([]);
 
   const replyTo = location.state?.replyTo;
   const forward = location.state?.forward;
@@ -44,15 +45,21 @@ function ComposeEmail({ mailboxes }) {
   const onFinish = async (values) => {
     setSending(true);
     try {
-      await emailAPI.send({
-        mailbox_id: values.mailbox_id,
-        to: values.to,
-        cc: values.cc,
-        bcc: values.bcc,
-        subject: values.subject,
-        text: values.body,
-        html: values.body.replace(/\n/g, '<br/>')
+      const formData = new FormData();
+      formData.append('mailbox_id', values.mailbox_id);
+      formData.append('to', values.to);
+      if (values.cc) formData.append('cc', values.cc);
+      if (values.bcc) formData.append('bcc', values.bcc);
+      formData.append('subject', values.subject);
+      formData.append('text', values.body);
+      formData.append('html', values.body.replace(/\n/g, '<br/>'));
+      
+      // 添加附件
+      fileList.forEach(file => {
+        formData.append('attachments', file.originFileObj);
       });
+      
+      await emailAPI.send(formData);
       message.success(t('email.send_success'));
       navigate(-1);
     } catch (error) {
@@ -141,6 +148,17 @@ function ComposeEmail({ mailboxes }) {
             <TextArea rows={12} placeholder={t('compose.body_placeholder')} />
           </Form.Item>
 
+          <Form.Item label="附件">
+            <Upload
+              multiple
+              fileList={fileList}
+              onChange={({ fileList }) => setFileList(fileList)}
+              beforeUpload={() => false}
+            >
+              <Button icon={<PaperClipOutlined />}>添加附件</Button>
+            </Upload>
+          </Form.Item>
+
           <Form.Item>
             <Space>
               <Button
@@ -151,14 +169,15 @@ function ComposeEmail({ mailboxes }) {
               >
                 {t('compose.send')}
               </Button>
-              {(replyTo || forward) && (
+              <Tooltip title="使用AI生成邮件内容（需要先配置AI服务）">
                 <Button
+                  icon={<RobotOutlined />}
                   loading={aiLoading}
                   onClick={handleAIGenerate}
                 >
                   {t('compose.ai_generate')}
                 </Button>
-              )}
+              </Tooltip>
             </Space>
           </Form.Item>
         </Form>

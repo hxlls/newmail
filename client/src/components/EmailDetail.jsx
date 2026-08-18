@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Button, Space, message, Tag, Divider, Spin, Modal } from 'antd';
+import { Card, Button, Space, message, Tag, Divider, Spin, Modal, List, Typography, Alert } from 'antd';
 import {
   ArrowLeftOutlined,
   SendOutlined,
@@ -8,17 +8,24 @@ import {
   DeleteOutlined,
   StarFilled,
   StarOutlined,
-  RobotOutlined
+  RobotOutlined,
+  PaperClipOutlined,
+  DownloadOutlined,
+  WarningOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
+import DOMPurify from 'dompurify';
 import { emailAPI, aiAPI } from '../services/api';
+
+const { Text } = Typography;
 
 function EmailDetail() {
   const { t } = useTranslation();
   const { id } = useParams();
   const navigate = useNavigate();
   const [email, setEmail] = useState(null);
+  const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [aiModalVisible, setAiModalVisible] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
@@ -34,11 +41,36 @@ function EmailDetail() {
     try {
       const res = await emailAPI.getById(id);
       setEmail(res.data.email);
+      setAttachments(res.data.attachments || []);
     } catch (error) {
       message.error(t('email.load_error'));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDownloadAttachment = async (attachmentId, filename) => {
+    try {
+      const res = await emailAPI.downloadAttachment(id, attachmentId);
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      message.error('下载附件失败');
+    }
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   const handleToggleStar = async () => {
@@ -142,16 +174,73 @@ function EmailDetail() {
           <div><strong>{t('email.date')}:</strong> {dayjs(email.received_at).format('YYYY-MM-DD HH:mm:ss')}</div>
         </div>
 
+        {email.spam_score > 0 && (
+          <Alert
+            type={email.spam_score >= 5 ? 'warning' : 'info'}
+            icon={<WarningOutlined />}
+            message={
+              <span>
+                垃圾邮件风险: {email.spam_score >= 5 ? '高' : email.spam_score >= 3 ? '中' : '低'}
+                {email.spam_reasons && (
+                  <span style={{ marginLeft: 8, fontSize: 12, color: '#666' }}>
+                    ({JSON.parse(email.spam_reasons).join(', ')})
+                  </span>
+                )}
+              </span>
+            }
+            style={{ marginBottom: 16 }}
+            showIcon
+          />
+        )}
+
         <Divider />
 
         <div
           className="email-content"
-          dangerouslySetInnerHTML={{ __html: email.body_html || email.body_text?.replace(/\n/g, '<br/>') }}
+          dangerouslySetInnerHTML={{ 
+            __html: DOMPurify.sanitize(email.body_html || email.body_text?.replace(/\n/g, '<br/>') || '', {
+              ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'img', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'div', 'span'],
+              ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'style', 'target', 'rel']
+            })
+          }}
         />
+
+        {attachments.length > 0 && (
+          <>
+            <Divider />
+            <div style={{ marginBottom: 16 }}>
+              <Text strong style={{ marginBottom: 8, display: 'block' }}>
+                <PaperClipOutlined /> 附件 ({attachments.length})
+              </Text>
+              <List
+                size="small"
+                dataSource={attachments}
+                renderItem={(att) => (
+                  <List.Item
+                    actions={[
+                      <Button 
+                        type="link" 
+                        icon={<DownloadOutlined />}
+                        onClick={() => handleDownloadAttachment(att.id, att.filename)}
+                      >
+                        下载
+                      </Button>
+                    ]}
+                  >
+                    <List.Item.Meta
+                      title={att.filename}
+                      description={formatFileSize(att.size)}
+                    />
+                  </List.Item>
+                )}
+              />
+            </div>
+          </>
+        )}
 
         <Divider />
 
-        <Space>
+        <Space wrap>
           <Button
             type="primary"
             icon={<SendOutlined />}
@@ -174,19 +263,26 @@ function EmailDetail() {
           >
             {t('email.forward')}
           </Button>
+          <Divider type="vertical" />
           <Button
             icon={<RobotOutlined />}
             onClick={handleAISummarize}
+            title={t('ai.summarize')}
           >
             {t('ai.summarize')}
           </Button>
           <Button
             icon={<RobotOutlined />}
             onClick={handleAIReply}
+            title={t('ai.ai_reply')}
           >
             {t('ai.ai_reply')}
           </Button>
         </Space>
+
+        <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+          提示：使用AI功能需要先在设置中配置AI服务
+        </div>
       </Card>
 
       <Modal

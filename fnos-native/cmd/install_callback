@@ -12,35 +12,47 @@ log_msg "Initializing NewMail..."
 mkdir -p "${TRIM_PKGVAR}/data"
 mkdir -p "${TRIM_PKGVAR}/logs"
 
-# 重新编译原生模块
+# 重新编译原生模块（ARM设备必须编译）
 APP_DIR="${TRIM_APPDEST}"
 log_msg "APP_DIR=$APP_DIR"
 
 if [ -d "$APP_DIR/server" ]; then
-  log_msg "Rebuilding native modules in $APP_DIR/server..."
-  cd "$APP_DIR/server"
+  SQLITE_BINARY="$APP_DIR/server/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
   
-  # 删除旧的编译文件
-  rm -rf node_modules/better-sqlite3/build
-  rm -rf node_modules/better-sqlite3/prebuilds
-  
-  # 重新编译
-  npm rebuild better-sqlite3 --build-from-source 2>&1 >> "${TRIM_PKGVAR}/install.log"
-  
-  if [ $? -eq 0 ]; then
-    log_msg "Native modules rebuilt successfully"
+  # 检查是否需要重新编译
+  if [ -f "$SQLITE_BINARY" ]; then
+    # 测试二进制是否可用
+    cd "$APP_DIR/server"
+    node -e "require('better-sqlite3')" 2>/dev/null
+    if [ $? -eq 0 ]; then
+      log_msg "Native module OK, skipping rebuild"
+    else
+      log_msg "Native module incompatible, rebuilding..."
+      rm -rf node_modules/better-sqlite3/build
+      npm rebuild better-sqlite3 --build-from-source 2>&1 >> "${TRIM_PKGVAR}/install.log"
+    fi
   else
-    log_msg "ERROR: Failed to rebuild native modules"
+    log_msg "Building native modules..."
+    cd "$APP_DIR/server"
+    npm rebuild better-sqlite3 --build-from-source 2>&1 >> "${TRIM_PKGVAR}/install.log"
+  fi
+  
+  if [ -f "$SQLITE_BINARY" ]; then
+    log_msg "Native modules ready"
+  else
+    log_msg "ERROR: Failed to build native modules"
   fi
 else
-  log_msg "ERROR: Server directory not found at $APP_DIR/server"
+  log_msg "ERROR: Server directory not found"
 fi
 
-# 生成环境变量
-JWT_SECRET=$(openssl rand -hex 32)
-ENCRYPTION_KEY=$(openssl rand -hex 16)
+# 只在首次安装时生成环境变量
+if [ ! -f "${TRIM_PKGVAR}/.env" ]; then
+  log_msg "Creating .env file..."
+  JWT_SECRET=$(openssl rand -hex 32)
+  ENCRYPTION_KEY=$(openssl rand -hex 16)
 
-cat > "${TRIM_PKGVAR}/.env" << EOF
+  cat > "${TRIM_PKGVAR}/.env" << EOF
 PORT=3000
 JWT_SECRET=${JWT_SECRET}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
@@ -48,5 +60,8 @@ DB_PATH=${TRIM_PKGVAR}/data/newmail.db
 LOG_PATH=${TRIM_PKGVAR}/logs
 NODE_ENV=production
 EOF
+else
+  log_msg "Preserving existing .env"
+fi
 
 log_msg "NewMail installed successfully"

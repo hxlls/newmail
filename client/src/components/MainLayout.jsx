@@ -8,7 +8,12 @@ import {
   RobotOutlined,
   LogoutOutlined,
   UserOutlined,
-  PlusOutlined
+  PlusOutlined,
+  DatabaseOutlined,
+  SendOutlined,
+  FileOutlined,
+  DeleteOutlined,
+  ExclamationCircleOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { io } from 'socket.io-client';
@@ -18,6 +23,8 @@ import EmailDetail from './EmailDetail';
 import ComposeEmail from './ComposeEmail';
 import MailboxSettings from './MailboxSettings';
 import AISettings from './AISettings';
+import BackupSettings from './BackupSettings';
+import SpamManager from './SpamManager';
 import { mailboxAPI } from '../services/api';
 
 const { Header, Sider, Content } = Layout;
@@ -94,6 +101,41 @@ function MainLayout({ user, onLogout }) {
       type: 'divider'
     },
     {
+      key: 'folders',
+      icon: <MailOutlined />,
+      label: '邮件文件夹',
+      children: [
+        {
+          key: '/folder/INBOX',
+          icon: <InboxOutlined />,
+          label: '收件箱'
+        },
+        {
+          key: '/folder/Sent',
+          icon: <SendOutlined />,
+          label: '已发送'
+        },
+        {
+          key: '/folder/Drafts',
+          icon: <FileOutlined />,
+          label: '草稿'
+        },
+        {
+          key: '/folder/Junk',
+          icon: <ExclamationCircleOutlined />,
+          label: '垃圾邮件'
+        },
+        {
+          key: '/folder/Trash',
+          icon: <DeleteOutlined />,
+          label: '已删除'
+        }
+      ]
+    },
+    {
+      type: 'divider'
+    },
+    {
       key: 'mailboxes',
       icon: <MailOutlined />,
       label: t('nav.my_mailboxes'),
@@ -124,6 +166,16 @@ function MainLayout({ user, onLogout }) {
       key: '/settings/ai',
       icon: <RobotOutlined />,
       label: t('nav.ai_settings')
+    },
+    {
+      key: '/settings/backup',
+      icon: <DatabaseOutlined />,
+      label: '数据备份'
+    },
+    {
+      key: '/settings/spam',
+      icon: <ExclamationCircleOutlined />,
+      label: '垃圾邮件'
     }
   ];
 
@@ -149,10 +201,11 @@ function MainLayout({ user, onLogout }) {
   ];
 
   const selectedKeys = [location.pathname];
+  const APP_VERSION = '1.8.6';
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider width={250} theme="light" style={{ borderRight: '1px solid #f0f0f0' }}>
+      <Sider width={250} theme="light" style={{ borderRight: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '16px 24px', fontWeight: 'bold', fontSize: 18 }}>
           📧 NewMail
         </div>
@@ -161,8 +214,17 @@ function MainLayout({ user, onLogout }) {
           selectedKeys={selectedKeys}
           items={menuItems}
           onClick={handleMenuClick}
-          style={{ border: 'none' }}
+          style={{ border: 'none', flex: 1 }}
         />
+        <div style={{ 
+          padding: '12px 24px', 
+          borderTop: '1px solid #f0f0f0',
+          fontSize: 12,
+          color: '#999',
+          textAlign: 'center'
+        }}>
+          v{APP_VERSION}
+        </div>
       </Sider>
       <Layout>
         <Header style={{
@@ -193,11 +255,14 @@ function MainLayout({ user, onLogout }) {
           <Routes>
             <Route path="/" element={<UnifiedInbox />} />
             <Route path="/starred" element={<UnifiedInbox starredOnly />} />
+            <Route path="/folder/:folder" element={<EmailList />} />
             <Route path="/mailbox/:id" element={<EmailList />} />
             <Route path="/email/:id" element={<EmailDetail />} />
             <Route path="/compose" element={<ComposeEmail mailboxes={mailboxes} />} />
             <Route path="/settings/mailboxes" element={<MailboxSettings onMailboxChange={loadMailboxes} />} />
             <Route path="/settings/ai" element={<AISettings />} />
+            <Route path="/settings/backup" element={<BackupSettings />} />
+            <Route path="/settings/spam" element={<SpamManager />} />
           </Routes>
         </Content>
       </Layout>

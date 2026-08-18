@@ -5,13 +5,12 @@ export PATH=/var/apps/nodejs_v22/target/bin:$PATH
 LOG_FILE="${TRIM_PKGVAR}/app.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 
-# TRIM_APPDEST = /vol1/@appcenter/newmail
-# app.tgz 解压后文件直接在这个目录下
 APP_DIR="${TRIM_APPDEST}"
 DATA_DIR="${TRIM_PKGVAR}"
 
 log_msg() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
 check_process() {
@@ -38,7 +37,6 @@ start_app() {
   fi
   
   log_msg "Starting NewMail..."
-  log_msg "APP_DIR=$APP_DIR"
   
   # 检查应用目录
   if [ ! -d "$APP_DIR" ]; then
@@ -47,11 +45,44 @@ start_app() {
     return 1
   fi
   
+  # 检查并编译原生模块
+  local server_dir="$APP_DIR/server"
+  local sqlite_binary="$server_dir/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+  
+  log_msg "Checking native modules..."
+  
+  if [ ! -f "$sqlite_binary" ]; then
+    log_msg "Binary not found, rebuilding..."
+    cd "$server_dir"
+    npm rebuild better-sqlite3 --build-from-source 2>&1 | tee -a "$LOG_FILE"
+  else
+    log_msg "Binary found at: $sqlite_binary"
+    
+    # 使用实际的加载方式测试
+    cd "$APP_DIR"
+    if node -e "
+      try {
+        const Database = require('./server/node_modules/better-sqlite3');
+        const db = new Database(':memory:');
+        db.close();
+        process.exit(0);
+      } catch(e) {
+        console.error(e.message);
+        process.exit(1);
+      }
+    " 2>/dev/null; then
+      log_msg "Module test passed"
+    else
+      log_msg "Module test failed, rebuilding..."
+      cd "$server_dir"
+      rm -rf node_modules/better-sqlite3/build
+      npm rebuild better-sqlite3 --build-from-source 2>&1 | tee -a "$LOG_FILE"
+    fi
+  fi
+  
   # 检查入口文件
   if [ ! -f "$APP_DIR/server/src/index.js" ]; then
-    log_msg "ERROR: Entry file not found: $APP_DIR/server/src/index.js"
-    log_msg "Directory contents:"
-    ls -la "$APP_DIR/" >> "$LOG_FILE" 2>&1
+    log_msg "ERROR: Entry file not found"
     echo "ERROR: Entry file not found" > "$TRIM_TEMP_LOGFILE"
     return 1
   fi
@@ -75,7 +106,7 @@ start_app() {
   
   # 启动应用
   cd "$APP_DIR" || exit 1
-  log_msg "Starting node..."
+  log_msg "Starting node from $(pwd)..."
   
   node server/src/index.js >> "$LOG_FILE" 2>&1 &
   local node_pid=$!
@@ -109,9 +140,9 @@ stop_app() {
     return 0
   fi
   
-  kill -TERM "$pid" 2>> "$LOG_FILE" || true
+  kill -TERM "$pid" 2>/dev/null || true
   sleep 2
-  kill -KILL "$pid" 2>> "$LOG_FILE" || true
+  kill -KILL "$pid" 2>/dev/null || true
   rm -f "$PID_FILE"
   log_msg "NewMail stopped"
 }

@@ -1,0 +1,58 @@
+#!/bin/bash
+# 诊断脚本 - 检查原生模块问题
+
+export PATH=/var/apps/nodejs_v22/target/bin:$PATH
+
+echo "=== NewMail 诊断 ==="
+echo ""
+
+APP_DIR="${TRIM_APPDEST}"
+BINARY="$APP_DIR/server/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+LOG_FILE="${TRIM_PKGVAR}/diagnose.log"
+
+{
+echo "1. 文件检查"
+if [ -f "$BINARY" ]; then
+    echo "   文件存在: $BINARY"
+    echo "   大小: $(ls -lh "$BINARY" | awk '{print $5}')"
+else
+    echo "   文件不存在"
+fi
+
+echo ""
+echo "2. 文件类型"
+file "$BINARY" 2>/dev/null || echo "   无法获取"
+
+echo ""
+echo "3. 共享库依赖"
+ldd "$BINARY" 2>&1 || echo "   ldd 不可用"
+
+echo ""
+echo "4. Node.js 版本"
+node --version
+
+echo ""
+echo "5. 测试加载"
+cd "$APP_DIR/server"
+node -e "
+try {
+    const db = require('better-sqlite3')(':memory:');
+    console.log('   加载成功');
+    db.close();
+} catch(e) {
+    console.log('   加载失败:', e.message);
+}
+"
+
+echo ""
+echo "6. 架构"
+uname -m
+
+echo ""
+echo "7. glibc"
+ldd --version 2>&1 | head -1
+
+} 2>&1 | tee "$LOG_FILE"
+
+echo ""
+echo "诊断完成，日志: $LOG_FILE"

@@ -55,7 +55,8 @@ function Register({ onLogin }) {
             name="password"
             rules={[
               { required: true, message: t('auth.password_required') },
-              { min: 6, message: t('auth.password_min') }
+              { min: 8, message: '密码至少8位' },
+              { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, message: '密码需包含大小写字母和数字' }
             ]}
           >
             <Input.Password prefix={<LockOutlined />} placeholder={t('auth.password')} />
