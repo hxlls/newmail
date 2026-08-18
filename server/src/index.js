@@ -34,9 +34,13 @@ const io = new Server(httpServer, {
 
 const PORT = process.env.PORT || 3000;
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173'
+  origin: true,
+  credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
 
@@ -46,7 +50,7 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-app.use(express.static(path.join(__dirname, '../../client/dist')));
+app.use(express.static(path.join(__dirname, '../public')));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/mailboxes', mailboxRoutes);
@@ -54,7 +58,7 @@ app.use('/api/emails', emailRoutes);
 app.use('/api/ai', aiRoutes);
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
+  res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
 app.use((err, req, res, next) => {

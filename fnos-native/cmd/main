@@ -2,112 +2,138 @@
 
 export PATH=/var/apps/nodejs_v22/target/bin:$PATH
 
+LOG_FILE="${TRIM_PKGVAR}/app.log"
+PID_FILE="${TRIM_PKGVAR}/app.pid"
+
+# TRIM_APPDEST = /vol1/@appcenter/newmail
+# app.tgz 解压后文件直接在这个目录下
+APP_DIR="${TRIM_APPDEST}"
+DATA_DIR="${TRIM_PKGVAR}"
+
+log_msg() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+}
+
+check_process() {
+  local pid="$1"
+  kill -0 "$pid" 2>/dev/null
+}
+
+status_app() {
+  if [ -f "$PID_FILE" ]; then
+    local pid
+    pid="$(head -n 1 "$PID_FILE" | tr -d '[:space:]')"
+    if [ -n "$pid" ] && check_process "$pid"; then
+      return 0
+    fi
+    rm -f "$PID_FILE"
+  fi
+  return 1
+}
+
+start_app() {
+  if status_app; then
+    log_msg "NewMail is already running"
+    return 0
+  fi
+  
+  log_msg "Starting NewMail..."
+  log_msg "APP_DIR=$APP_DIR"
+  
+  # 检查应用目录
+  if [ ! -d "$APP_DIR" ]; then
+    log_msg "ERROR: App directory not found: $APP_DIR"
+    echo "ERROR: App directory not found" > "$TRIM_TEMP_LOGFILE"
+    return 1
+  fi
+  
+  # 检查入口文件
+  if [ ! -f "$APP_DIR/server/src/index.js" ]; then
+    log_msg "ERROR: Entry file not found: $APP_DIR/server/src/index.js"
+    log_msg "Directory contents:"
+    ls -la "$APP_DIR/" >> "$LOG_FILE" 2>&1
+    echo "ERROR: Entry file not found" > "$TRIM_TEMP_LOGFILE"
+    return 1
+  fi
+  
+  # 加载环境变量
+  if [ -f "$DATA_DIR/.env" ]; then
+    export $(grep -v '^#' "$DATA_DIR/.env" | xargs)
+    log_msg "Loaded env"
+  fi
+  
+  # 设置默认值
+  export PORT=${PORT:-3000}
+  export NODE_ENV=production
+  export DB_PATH=${DB_PATH:-$DATA_DIR/data/newmail.db}
+  export LOG_PATH=${LOG_PATH:-$DATA_DIR/logs}
+  export CLIENT_URL=http://localhost:${PORT}
+  
+  # 创建必要目录
+  mkdir -p "$DATA_DIR/data"
+  mkdir -p "$DATA_DIR/logs"
+  
+  # 启动应用
+  cd "$APP_DIR" || exit 1
+  log_msg "Starting node..."
+  
+  node server/src/index.js >> "$LOG_FILE" 2>&1 &
+  local node_pid=$!
+  echo "$node_pid" > "$PID_FILE"
+  
+  log_msg "Node PID: $node_pid"
+  
+  # 等待启动
+  sleep 3
+  
+  if check_process "$node_pid"; then
+    log_msg "NewMail started successfully"
+    return 0
+  else
+    log_msg "ERROR: Node process exited"
+    rm -f "$PID_FILE"
+    return 1
+  fi
+}
+
+stop_app() {
+  log_msg "Stopping NewMail..."
+  if [ ! -f "$PID_FILE" ]; then
+    return 0
+  fi
+  
+  local pid
+  pid="$(head -n 1 "$PID_FILE" | tr -d '[:space:]')"
+  if [ -z "$pid" ] || ! check_process "$pid"; then
+    rm -f "$PID_FILE"
+    return 0
+  fi
+  
+  kill -TERM "$pid" 2>> "$LOG_FILE" || true
+  sleep 2
+  kill -KILL "$pid" 2>> "$LOG_FILE" || true
+  rm -f "$PID_FILE"
+  log_msg "NewMail stopped"
+}
+
 case "$1" in
   start)
-    # 应用目录 - app.tgz 解压后直接在 target 目录下
-    APP_DIR="${TRIM_APPDEST}/target"
-    
-    # 如果target不存在，尝试直接路径
-    if [ ! -d "$APP_DIR" ]; then
-      APP_DIR="/vol1/@appcenter/newmail"
-    fi
-    
-    # 检查应用目录
-    if [ ! -d "$APP_DIR/server" ]; then
-      echo "ERROR: Application directory not found: $APP_DIR" >&2
-      exit 1
-    fi
-    
-    # 数据目录
-    DATA_DIR="${TRIM_PKGVAR}"
-    if [ -z "$DATA_DIR" ] || [ ! -d "$DATA_DIR" ]; then
-      DATA_DIR="/vol1/@appdata/newmail"
-    fi
-    
-    # 加载环境变量
-    if [ -f "$DATA_DIR/.env" ]; then
-      export $(grep -v '^#' "$DATA_DIR/.env" | xargs)
-    fi
-    
-    # 设置默认值
-    export PORT=${PORT:-3000}
-    export NODE_ENV=production
-    export DB_PATH=${DB_PATH:-$DATA_DIR/data/newmail.db}
-    export LOG_PATH=${LOG_PATH:-$DATA_DIR/logs}
-    export CLIENT_URL=http://localhost:${PORT}
-    
-    # 创建必要目录
-    mkdir -p "$DATA_DIR/data"
-    mkdir -p "$DATA_DIR/logs"
-    
-    # 启动应用
-    echo "Starting NewMail on port ${PORT}..."
-    cd "$APP_DIR"
-    node server/src/index.js >> "$DATA_DIR/newmail.log" 2>&1 &
-    echo $! > "$DATA_DIR/newmail.pid"
-    
-    # 等待启动
-    sleep 3
-    if [ -f "$DATA_DIR/newmail.pid" ] && kill -0 $(cat "$DATA_DIR/newmail.pid") 2>/dev/null; then
-      echo "NewMail started successfully"
-      exit 0
-    else
-      echo "NewMail failed to start, check $DATA_DIR/newmail.log"
-      exit 1
-    fi
+    start_app
     ;;
-    
   stop)
-    DATA_DIR="${TRIM_PKGVAR}"
-    if [ -z "$DATA_DIR" ] || [ ! -d "$DATA_DIR" ]; then
-      DATA_DIR="/vol1/@appdata/newmail"
-    fi
-    
-    if [ -f "$DATA_DIR/newmail.pid" ]; then
-      PID=$(cat "$DATA_DIR/newmail.pid")
-      if kill -0 "$PID" 2>/dev/null; then
-        echo "Stopping NewMail..."
-        kill "$PID"
-        sleep 2
-        kill -9 "$PID" 2>/dev/null || true
-      fi
-      rm -f "$DATA_DIR/newmail.pid"
-    fi
-    exit 0
+    stop_app
     ;;
-    
   status)
-    DATA_DIR="${TRIM_PKGVAR}"
-    if [ -z "$DATA_DIR" ] || [ ! -d "$DATA_DIR" ]; then
-      DATA_DIR="/vol1/@appdata/newmail"
+    if status_app; then
+      exit 0
     fi
-    
-    if [ -f "$DATA_DIR/newmail.pid" ]; then
-      PID=$(cat "$DATA_DIR/newmail.pid")
-      if kill -0 "$PID" 2>/dev/null; then
-        echo "NewMail is running"
-        exit 0
-      fi
-    fi
-    echo "NewMail is not running"
     exit 3
     ;;
-    
   log)
-    DATA_DIR="${TRIM_PKGVAR}"
-    if [ -z "$DATA_DIR" ] || [ ! -d "$DATA_DIR" ]; then
-      DATA_DIR="/vol1/@appdata/newmail"
-    fi
-    
     LINES="${2:-100}"
-    if [ -f "$DATA_DIR/newmail.log" ]; then
-      tail -n "$LINES" "$DATA_DIR/newmail.log"
-    else
-      echo "No log file found"
-    fi
+    tail -n "$LINES" "$LOG_FILE" 2>/dev/null || echo "No log"
     exit 0
     ;;
-    
   *)
     exit 1
     ;;
