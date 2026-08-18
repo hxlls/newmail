@@ -75,199 +75,85 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Download fnpack
         run: |
           curl -sL "https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64" -o /usr/local/bin/fnpack
           chmod +x /usr/local/bin/fnpack
 
-      - name: Create fpk project
+      - name: Install dependencies
         run: |
-          fnpack create newmail --template docker
+          cd server
+          npm ci --only=production
+          cd ../client
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd client
+          npm run build
+
+      - name: Prepare fpk package
+        run: |
+          # 创建构建目录
+          mkdir -p fpk-build/app/server fpk-build/app/client
           
-          # Update manifest
-          cat > newmail/manifest << EOF
-          appname               = newmail
-          version               = ${{ steps.version.outputs.version }}
-          display_name          = NewMail
-          desc                  = AI邮件助手 - 支持多邮箱统一管理、AI智能处理邮件、实时通知推送
-          platform              = all
-          source                = thirdparty
-          maintainer            = NewMail
-          maintainer_url        = https://github.com/${{ github.repository }}
-          distributor           = custom
-          distributor_url       = https://github.com/${{ github.repository }}
-          desktop_uidir         = ui
-          desktop_applaunchname = newmail.Application
-          service_port          = 3000
-          ctl_stop              = true
-          EOF
-
-      - name: Configure Docker Compose
-        run: |
-          cat > newmail/app/docker/docker-compose.yaml << EOF
-          version: "3.8"
+          # 复制项目文件
+          cp -r fnos-native/* fpk-build/
           
-          services:
-            newmail:
-              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
-              container_name: newmail
-              restart: unless-stopped
-              ports:
-                - "3000:3000"
-              volumes:
-                - "\${TRIM_PKGVAR}:/app/data"
-              environment:
-                - NODE_ENV=production
-                - PORT=3000
-                - JWT_SECRET=\${JWT_SECRET}
-                - ENCRYPTION_KEY=\${ENCRYPTION_KEY}
-                - DB_PATH=/app/data/newmail.db
-                - LOG_PATH=/app/data/logs
-          EOF
-
-      - name: Configure UI
-        run: |
-          cat > newmail/app/ui/config << EOF
-          {
-            ".url": {
-              "newmail.Application": {
-                "title": "NewMail",
-                "desc": "AI邮件助手",
-                "icon": "images/icon_{0}.png",
-                "type": "url",
-                "port": "3000",
-                "protocol": "http",
-                "url": "/",
-                "allUsers": true
-              }
-            }
-          }
-          EOF
-
-      - name: Configure lifecycle scripts
-        run: |
-          # main script
-          cat > newmail/cmd/main << 'SCRIPT'
+          # 复制已构建的文件
+          cp -r server/* fpk-build/app/server/
+          cp -r server/node_modules fpk-build/app/server/
+          cp -r client/* fpk-build/app/client/
+          cp -r client/dist fpk-build/app/client/
+          cp -r client/node_modules fpk-build/app/client/
+          
+          # 复制图标
+          cp fnos/icon.png fpk-build/ICON.PNG
+          cp fnos/icon_256.png fpk-build/ICON_256.PNG
+          cp fnos/icon.png fpk-build/app/ui/images/icon_64.png
+          cp fnos/icon_256.png fpk-build/app/ui/images/icon_256.png
+          
+          # 更新版本号
+          sed -i "s/^version.*/version               = ${{ steps.version.outputs.version }}/" fpk-build/manifest
+          
+          # 简化install脚本
+          cat > fpk-build/cmd/install_callback << 'EOF'
           #!/bin/bash
-          
-          case "$1" in
-            start)
-              cd "${TRIM_APPDEST}/app/docker"
-              docker compose up -d
-              exit $?
-              ;;
-            stop)
-              cd "${TRIM_APPDEST}/app/docker"
-              docker compose down
-              exit $?
-              ;;
-            status)
-              docker inspect newmail 2>/dev/null | grep -q '"Status": "running",' 2>/dev/null
-              if [ $? -eq 0 ]; then
-                echo "NewMail is running"
-                exit 0
-              else
-                echo "NewMail is not running"
-                exit 3
-              fi
-              ;;
-            log)
-              LINES="${2:-100}"
-              docker logs --tail "$LINES" newmail 2>&1
-              exit 0
-              ;;
-            *)
-              exit 1
-              ;;
-          esac
-          SCRIPT
-          
-          # install_callback script
-          cat > newmail/cmd/install_callback << 'SCRIPT'
-          #!/bin/bash
-          
+          mkdir -p "${TRIM_PKGVAR}/data" "${TRIM_PKGVAR}/logs"
           JWT_SECRET=$(openssl rand -hex 32)
           ENCRYPTION_KEY=$(openssl rand -hex 16)
-          
           cat > "${TRIM_PKGVAR}/.env" << ENVEOF
           PORT=3000
           JWT_SECRET=${JWT_SECRET}
           ENCRYPTION_KEY=${ENCRYPTION_KEY}
-          DB_PATH=/app/data/newmail.db
-          LOG_PATH=/app/data/logs
+          DB_PATH=${TRIM_PKGVAR}/data/newmail.db
+          LOG_PATH=${TRIM_PKGVAR}/logs
+          NODE_ENV=production
           ENVEOF
-          
-          mkdir -p "${TRIM_PKGVAR}/data"
-          mkdir -p "${TRIM_PKGVAR}/logs"
-          
           echo "NewMail installed successfully"
-          SCRIPT
-          
-          chmod +x newmail/cmd/*
-
-      - name: Configure resources
-        run: |
-          cat > newmail/config/resource << EOF
-          {
-            "port-config": {
-              "protocol-file": "newmail.sc"
-            },
-            "data-share": {
-              "shares": [
-                {
-                  "name": "newmail",
-                  "permission": {
-                    "rw": ["newmail"]
-                  }
-                }
-              ]
-            },
-            "systemd-unit": {}
-          }
           EOF
-          
-          cat > newmail/config/privilege << EOF
-          {
-            "defaults": {
-              "run-as": "package"
-            },
-            "username": "newmail",
-            "groupname": "newmail"
-          }
-          EOF
-          
-          cat > newmail/newmail.sc << EOF
-          [newmail]
-          title="NewMail"
-          desc="AI邮件助手"
-          port_forward="yes"
-          src.ports="3000/tcp"
-          dst.ports="3000/tcp"
-          EOF
-
-      - name: Copy icons
-        run: |
-          if [ -f "fnos/icon.png" ]; then
-            cp fnos/icon.png newmail/ICON.PNG
-            cp fnos/icon_256.png newmail/ICON_256.PNG 2>/dev/null || cp fnos/icon.png newmail/ICON_256.PNG
-            cp fnos/icon.png newmail/app/ui/images/icon_64.png
-            cp fnos/icon_256.png newmail/app/ui/images/icon_256.png 2>/dev/null || cp fnos/icon.png newmail/app/ui/images/icon_256.png
-          fi
+          chmod +x fpk-build/cmd/*
 
       - name: Build fpk
         run: |
-          cd newmail
+          cd fpk-build
           fnpack build
-          mv newmail.fpk ../newmail_${{ steps.version.outputs.version }}.fpk
+          mv newmail.fpk ../newmail_${{ steps.version.outputs.version }}_native.fpk
 
       - name: Upload fpk artifact
         uses: actions/upload-artifact@v4
         with:
-          name: newmail-fpk
-          path: newmail_*.fpk
+          name: newmail-fpk-native
+          path: newmail_*_native.fpk
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: newmail_*.fpk
+          files: |
+            newmail_*_native.fpk
           generate_release_notes: true
