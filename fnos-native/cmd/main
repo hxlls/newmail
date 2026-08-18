@@ -4,7 +4,7 @@ export PATH=/var/apps/nodejs_v22/target/bin:$PATH
 
 case "$1" in
   start)
-    # 应用目录
+    # 应用目录 - app.tgz 解压后直接在 target 目录下
     APP_DIR="${TRIM_APPDEST}/target"
     
     # 如果target不存在，尝试直接路径
@@ -13,7 +13,7 @@ case "$1" in
     fi
     
     # 检查应用目录
-    if [ ! -d "$APP_DIR/app" ]; then
+    if [ ! -d "$APP_DIR/server" ]; then
       echo "ERROR: Application directory not found: $APP_DIR" >&2
       exit 1
     fi
@@ -42,7 +42,7 @@ case "$1" in
     
     # 启动应用
     echo "Starting NewMail on port ${PORT}..."
-    cd "$APP_DIR/app"
+    cd "$APP_DIR"
     node server/src/index.js >> "$DATA_DIR/newmail.log" 2>&1 &
     echo $! > "$DATA_DIR/newmail.pid"
     

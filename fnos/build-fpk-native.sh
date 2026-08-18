@@ -20,73 +20,47 @@ info "预构建 NewMail v${VERSION}"
 # 创建临时构建目录
 BUILD_DIR="/tmp/newmail-build"
 rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR/app/server" "$BUILD_DIR/app/client/dist" "$BUILD_DIR/app/ui/images"
-
-# 复制fnos框架文件
-info "复制框架文件..."
-cp -r "$PROJECT_ROOT/fnos-native/cmd" "$BUILD_DIR/"
-cp -r "$PROJECT_ROOT/fnos-native/config" "$BUILD_DIR/"
-cp -r "$PROJECT_ROOT/fnos-native/wizard" "$BUILD_DIR/"
-cp "$PROJECT_ROOT/fnos-native/manifest" "$BUILD_DIR/"
-cp "$PROJECT_ROOT/fnos-native/newmail.sc" "$BUILD_DIR/"
-
-# 复制图标
-cp "$PROJECT_ROOT/fnos/icon.png" "$BUILD_DIR/ICON.PNG"
-cp "$PROJECT_ROOT/fnos/icon_256.png" "$BUILD_DIR/ICON_256.PNG"
-cp "$PROJECT_ROOT/fnos/icon.png" "$BUILD_DIR/app/ui/images/icon_64.png"
-cp "$PROJECT_ROOT/fnos/icon_256.png" "$BUILD_DIR/app/ui/images/icon_256.png"
-cp "$PROJECT_ROOT/fnos-native/app/ui/config" "$BUILD_DIR/app/ui/"
+mkdir -p "$BUILD_DIR/app/server" "$BUILD_DIR/app/ui/images" "$BUILD_DIR/cmd" "$BUILD_DIR/config" "$BUILD_DIR/wizard"
 
 # 安装后端依赖
 info "安装后端依赖..."
 cd "$PROJECT_ROOT/server"
-npm ci --only=production --no-fund 2>/dev/null || npm install --only=production --no-fund
+npm install --production --no-fund 2>/dev/null || true
 
 # 安装前端依赖并构建
 info "构建前端..."
 cd "$PROJECT_ROOT/client"
-npm ci --no-fund 2>/dev/null || npm install --no-fund
+npm install --no-fund 2>/dev/null || true
 npm run build
 
 # 复制后端代码和依赖
 info "打包后端..."
 cp -r "$PROJECT_ROOT/server"/* "$BUILD_DIR/app/server/"
 
-# 复制前端构建产物
+# 复制前端构建产物到 server/public
 info "打包前端..."
-cp -r "$PROJECT_ROOT/client/dist"/* "$BUILD_DIR/app/client/dist/"
+mkdir -p "$BUILD_DIR/app/server/public"
+cp -r "$PROJECT_ROOT/client/dist"/* "$BUILD_DIR/app/server/public/"
 
-# 复制前端必要文件（运行时需要）
-cp "$PROJECT_ROOT/client/package.json" "$BUILD_DIR/app/client/"
+# 复制UI配置
+cp "$PROJECT_ROOT/fnos-native/app/ui/config" "$BUILD_DIR/app/ui/"
+
+# 复制图标
+cp "$PROJECT_ROOT/fnos/icon.png" "$BUILD_DIR/app/ui/images/icon_64.png"
+cp "$PROJECT_ROOT/fnos/icon_256.png" "$BUILD_DIR/app/ui/images/icon_256.png"
+
+# 复制框架文件
+cp "$PROJECT_ROOT/fnos-native/manifest" "$BUILD_DIR/"
+cp -r "$PROJECT_ROOT/fnos-native/cmd/"* "$BUILD_DIR/cmd/"
+cp -r "$PROJECT_ROOT/fnos-native/config/"* "$BUILD_DIR/config/"
+cp -r "$PROJECT_ROOT/fnos-native/wizard/"* "$BUILD_DIR/wizard/"
+
+# 复制图标
+cp "$PROJECT_ROOT/fnos/icon.png" "$BUILD_DIR/ICON.PNG"
+cp "$PROJECT_ROOT/fnos/icon_256.png" "$BUILD_DIR/ICON_256.PNG"
 
 # 更新manifest版本号
 sed -i "s/^version.*/version               = ${VERSION}/" "$BUILD_DIR/manifest"
-
-# 简化install_callback（所有文件已经打包好了）
-cat > "$BUILD_DIR/cmd/install_callback" << 'EOF'
-#!/bin/bash
-
-echo "Initializing NewMail..."
-
-# 创建数据目录
-mkdir -p "${TRIM_PKGVAR}/data"
-mkdir -p "${TRIM_PKGVAR}/logs"
-
-# 生成环境变量
-JWT_SECRET=$(openssl rand -hex 32)
-ENCRYPTION_KEY=$(openssl rand -hex 16)
-
-cat > "${TRIM_PKGVAR}/.env" << ENVEOF
-PORT=3000
-JWT_SECRET=${JWT_SECRET}
-ENCRYPTION_KEY=${ENCRYPTION_KEY}
-DB_PATH=${TRIM_PKGVAR}/data/newmail.db
-LOG_PATH=${TRIM_PKGVAR}/logs
-NODE_ENV=production
-ENVEOF
-
-echo "NewMail installed successfully"
-EOF
 
 chmod +x "$BUILD_DIR/cmd/"*
 
