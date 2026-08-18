@@ -15,19 +15,28 @@ mkdir -p "$TARGET_DIR"
 # 复制server和client
 cp -r "${TRIM_APPDEST}/app/server" "$TARGET_DIR/"
 cp -r "${TRIM_APPDEST}/app/client" "$TARGET_DIR/"
-cp "${TRIM_APPDEST}/app/package.json" "$TARGET_DIR/" 2>/dev/null || true
+
+# 设置npm镜像源（国内加速）
+npm config set registry https://registry.npmmirror.com
 
 # 安装后端依赖
 cd "$TARGET_DIR/server"
 echo "Installing server dependencies..."
-npm ci --only=production
+npm ci --only=production --no-fund --no-optional 2>&1 || {
+  echo "npm ci failed, trying npm install..."
+  npm install --only=production --no-fund --no-optional 2>&1
+}
 
 # 安装前端依赖并构建
 cd "$TARGET_DIR/client"
 echo "Installing client dependencies..."
-npm ci
+npm ci --no-fund --no-optional 2>&1 || {
+  echo "npm ci failed, trying npm install..."
+  npm install --no-fund --no-optional 2>&1
+}
+
 echo "Building frontend..."
-npm run build
+npm run build 2>&1
 
 # 生成环境变量
 JWT_SECRET=$(openssl rand -hex 32)

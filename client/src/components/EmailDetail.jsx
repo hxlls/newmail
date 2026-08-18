@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button, Space, message, Tag, Divider, Spin, Modal } from 'antd';
 import {
   ArrowLeftOutlined,
-  ReplyOutlined,
+  SendOutlined,
   ForwardOutlined,
   DeleteOutlined,
   StarFilled,
@@ -154,7 +154,7 @@ function EmailDetail() {
         <Space>
           <Button
             type="primary"
-            icon={<ReplyOutlined />}
+            icon={<SendOutlined />}
             onClick={() => navigate('/compose', {
               state: {
                 replyTo: email,
